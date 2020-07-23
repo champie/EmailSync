@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
@@ -208,10 +207,6 @@ namespace EmailSync
 
             // Parse the incoming args and invoke the handler
             return rootCommand.InvokeAsync(args).Result;
-
-
-            // test_imap();
-            // test_pop3();
         }
 
         private static void sync_mailbox(CONNECT_OPTS srcOpts, CONNECT_OPTS dstOpts)
@@ -225,6 +220,7 @@ namespace EmailSync
                     foreach (var ns in src_client.PersonalNamespaces)
                     foreach (var src_folder in src_client.GetFolders(ns))
                     {
+                        src_folder.Open(FolderAccess.ReadWrite);
                         var dst_folder = dst_client.GetFolder(src_folder.Name);
                         var dst_message_ids = GetMessageIds(dst_folder);
                         for (var i = 0; i < src_folder.Count; i++)
@@ -248,7 +244,19 @@ namespace EmailSync
 
         private static List<string> GetMessageIds(IMailFolder dst_folder)
         {
-            throw new NotImplementedException();
+            dst_folder.Open(FolderAccess.ReadWrite);
+            const MessageSummaryItems EVERYTHING = (MessageSummaryItems) (-1);
+            var summaries = dst_folder.Fetch(0, -1, EVERYTHING);
+            // var dst_message_ids = new List<string>();
+            //         foreach (var summary in summaries)
+            //         {
+            //             var message = folder.GetMessage(summary.UniqueId);
+            //             dst_message_ids.Add(message.MessageId);
+            //         }
+            var dst_message_ids = (summaries.Select(summary => summary.Headers?.FirstOrDefault(h => h.Field.Equals("Message-ID")))
+            	.Where(message_id => message_id != null)
+            	.Select(message_id => message_id.Value.Replace("<",null).Replace(">",null))).ToList();
+            return dst_message_ids;
         }
 
         private static IImapClient connect(CONNECT_OPTS opts)

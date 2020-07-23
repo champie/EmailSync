@@ -23,9 +23,19 @@ namespace EmailSync
             personal_namespaces = new FolderNamespaceCollection();
             personal_namespaces.Add(new FolderNamespace('/', "INBOX"));
             list_implementation = new List<IMailFolder>();
-            list_implementation.Add(new Pop3MailFolder());
+            list_implementation.Add(new Pop3MailFolder(this));
         }
 
+        public IList<IMailFolder> GetFolders(FolderNamespace @namespace, StatusItems items = StatusItems.None, bool subscribedOnly = false,
+            CancellationToken cancellationToken = new CancellationToken())
+        {
+            return this;
+        }
+
+        public FolderNamespaceCollection PersonalNamespaces => personal_namespaces;
+
+        #region NOT_IMPLEMENTED
+        
         public void EnableQuickResync(CancellationToken cancellationToken = new CancellationToken())
         {
             throw new NotImplementedException();
@@ -54,12 +64,6 @@ namespace EmailSync
         public Task<IList<IMailFolder>> GetFoldersAsync(FolderNamespace @namespace, bool subscribedOnly, CancellationToken cancellationToken = new CancellationToken())
         {
             throw new NotImplementedException();
-        }
-
-        public IList<IMailFolder> GetFolders(FolderNamespace @namespace, StatusItems items = StatusItems.None, bool subscribedOnly = false,
-            CancellationToken cancellationToken = new CancellationToken())
-        {
-            return this;
         }
 
         public Task<IList<IMailFolder>> GetFoldersAsync(FolderNamespace @namespace, StatusItems items = StatusItems.None, bool subscribedOnly = false,
@@ -113,12 +117,13 @@ namespace EmailSync
             throw new NotImplementedException();
         }
 
-        public Task SetMetadataAsync(MetadataCollection metadata, CancellationToken cancellationToken = new CancellationToken())
+        public Task SetMetadataAsync(MetadataCollection metadata,
+            CancellationToken cancellationToken = new CancellationToken())
         {
             throw new NotImplementedException();
         }
+        
 
-        public FolderNamespaceCollection PersonalNamespaces => personal_namespaces;
 
         public FolderNamespaceCollection SharedNamespaces { get; }
         public FolderNamespaceCollection OtherNamespaces { get; }
@@ -128,6 +133,14 @@ namespace EmailSync
         public event EventHandler<AlertEventArgs> Alert;
         public event EventHandler<FolderCreatedEventArgs> FolderCreated;
         public event EventHandler<MetadataChangedEventArgs> MetadataChanged;
+        
+        #endregion
+
+        //--------------------------------------------------------------------------------
+        // IIMapClient
+        
+        #region NOT_IMPLEMENTED
+        
         public void Compress(CancellationToken cancellationToken = new CancellationToken())
         {
             throw new NotImplementedException();
@@ -177,15 +190,18 @@ namespace EmailSync
         {
             throw new NotImplementedException();
         }
-
+        
         public new ImapCapabilities Capabilities { get; set; }
         public uint? AppendLimit { get; }
         public int InternationalizationLevel { get; }
         public AccessRights Rights { get; }
         public bool IsIdle { get; }
 
+        #endregion
+        
         //--------------------------------------------------------------------------------
-
+        // IList<IMailFolder>
+            
         public IEnumerator<IMailFolder> GetEnumerator()
         {
             return list_implementation.GetEnumerator();
@@ -240,9 +256,34 @@ namespace EmailSync
         }
     }
 
+    //--------------------------------------------------------------------------------
+    // IMailFolder
+
     internal class Pop3MailFolder : IMailFolder
     {
+        private Pop3Client client;
         private IMailFolder mail_folder_implementation;
+
+        public Pop3MailFolder(Pop3Client client)
+        {
+            this.client = client;
+        }
+
+        public string Name => "INBOX";
+        public int Count => client.Count;
+
+        public FolderAccess Open(FolderAccess access, CancellationToken cancellationToken = new CancellationToken())
+        {
+            return access;
+        }
+
+        public MimeMessage GetMessage(int index, CancellationToken cancellationToken = new CancellationToken(), ITransferProgress progress = null)
+        {
+            return client.GetMessage(index, cancellationToken);
+        }
+
+        #region NOT_IMPLEMENTED
+        
         public IEnumerator<MimeMessage> GetEnumerator()
         {
             throw new NotImplementedException();
@@ -266,11 +307,6 @@ namespace EmailSync
 
         public Task<FolderAccess> OpenAsync(FolderAccess access, uint uidValidity, ulong highestModSeq, IList<UniqueId> uids,
             CancellationToken cancellationToken = new CancellationToken())
-        {
-            throw new NotImplementedException();
-        }
-
-        public FolderAccess Open(FolderAccess access, CancellationToken cancellationToken = new CancellationToken())
         {
             throw new NotImplementedException();
         }
@@ -1098,11 +1134,6 @@ namespace EmailSync
         }
 
         public Task<MimeMessage> GetMessageAsync(UniqueId uid, CancellationToken cancellationToken = new CancellationToken(), ITransferProgress progress = null)
-        {
-            throw new NotImplementedException();
-        }
-
-        public MimeMessage GetMessage(int index, CancellationToken cancellationToken = new CancellationToken(), ITransferProgress progress = null)
         {
             throw new NotImplementedException();
         }
@@ -1970,7 +2001,6 @@ namespace EmailSync
         public FolderAccess Access { get; }
         public bool IsNamespace { get; }
         public string FullName { get; }
-        public string Name { get; }
         public string Id { get; }
         public bool IsSubscribed { get; }
         public bool IsOpen { get; }
@@ -1984,7 +2014,6 @@ namespace EmailSync
         public int FirstUnread { get; }
         public int Unread { get; }
         public int Recent { get; }
-        public int Count { get; }
         public HashSet<ThreadingAlgorithm> ThreadingAlgorithms { get; }
         public event EventHandler<EventArgs> Opened;
         public event EventHandler<EventArgs> Closed;
@@ -2008,5 +2037,8 @@ namespace EmailSync
         public event EventHandler<EventArgs> CountChanged;
         public event EventHandler<EventArgs> RecentChanged;
         public event EventHandler<EventArgs> UnreadChanged;
+
+        #endregion
+
     }
 }
