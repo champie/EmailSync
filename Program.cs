@@ -1,10 +1,10 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Diagnostics;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
 using MailKit;
 using MailKit.Net.Imap;
 using MailKit.Net.Pop3;
@@ -15,14 +15,14 @@ namespace EmailSync
 {
     internal class Program
     {
-        internal class CONNECTION_OPTIONS
+        public enum TYPE
         {
-            public enum TYPE
-            {
-                POP3,
-                IMAP
-            }
+            POP3,
+            IMAP
+        }
 
+        internal class CONNECT_OPTS
+        {
             public string host;
             public string password;
             public int port;
@@ -32,22 +32,84 @@ namespace EmailSync
             public string user;
         }
 
+        internal class _CONNECT : IDisposable
+        {
+            private ImapClient imap;
+            private Pop3Client pop3;
+
+            public _CONNECT(CONNECT_OPTS connect_opts)
+            {
+            }
+
+            public void Dispose()
+            {
+                imap?.Dispose();
+                pop3?.Dispose();
+            }
+
+            public IEnumerable<FOLDER> GetFolders()
+            {
+                throw new NotImplementedException();
+            }
+
+            public FOLDER MakeOrOpenFloder(string name)
+            {
+                throw new NotImplementedException();
+            }
+
+            public void Disconnect(bool b)
+            {
+                throw new NotImplementedException();
+            }
+
+            public MimeMessage GetMessage(in int i)
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        internal class FOLDER
+        {
+            public string Name { get; set; }
+
+            public int GetNumMessages()
+            {
+                throw new NotImplementedException();
+            }
+
+            public IList<IMessageSummary> GetMessageSummaries()
+            {
+                throw new NotImplementedException();
+                // folder.Fetch(0, -1, MessageSummaryItems.Full);
+            }
+
+            public IList<string> GetMessageIds()
+            {
+                throw new NotImplementedException();
+            }
+
+            public void Append(MimeMessage message)
+            {
+                throw new NotImplementedException();
+            }
+        }
+        
         public class OPTS
         {
-            public CONNECTION_OPTIONS.TYPE srcType { get; set; }
+            public TYPE srcType { get; set; }
             public string srcHost { get; set; }
             public int srcPort { get; set; }
             public string srcUser { get; set; }
             public string srcPass { get; set; }
             public SecureSocketOptions srcSsl { get; set; }
-            public CONNECTION_OPTIONS srcOptions { get; set; }
-            public CONNECTION_OPTIONS.TYPE dstType { get; set; }
+            public CONNECT_OPTS src_connect_opts { get; set; }
+            public TYPE dstType { get; set; }
             public string dstHost { get; set; }
             public int dstPort { get; set; }
             public string dstUser { get; set; }
             public string dstPass { get; set; }
             public SecureSocketOptions dstSsl { get; set; }
-            public CONNECTION_OPTIONS dstOptions { get; set; }
+            public CONNECT_OPTS dst_connect_opts { get; set; }
         }
 
         private static int Main(string[] args)
@@ -55,10 +117,13 @@ namespace EmailSync
             // Create a root command with some options
             var rootCommand = new RootCommand
             {
-                new Option<CONNECTION_OPTIONS.TYPE>(
+                new Option<TYPE>(
                     "--src-type",
-                    () => CONNECTION_OPTIONS.TYPE.IMAP,
+                    () => TYPE.IMAP,
                     "Type of source server (POP3 or IMAP)"),
+                new Option<string>(
+                    "--src-mailbox",
+                    "Source mail folder (IMAP only)"),
                 new Option<string>(
                     "--src-host",
                     "Address of host to read from"),
@@ -76,14 +141,17 @@ namespace EmailSync
                     "--src-ssl",
                     () => SecureSocketOptions.SslOnConnect,
                     "SSL for source server (None, SslOnConnect)"),
-                new Option<CONNECTION_OPTIONS>(
+                new Option<CONNECT_OPTS>(
                     "--src",
                     "Complete specification for mail server to read from"),
 
-                new Option<CONNECTION_OPTIONS.TYPE>(
+                new Option<TYPE>(
                     "--dst-type",
-                    () => CONNECTION_OPTIONS.TYPE.IMAP,
+                    () => TYPE.IMAP,
                     "Type of destination server (POP3 not supported, only IMAP)"),
+                new Option<string>(
+                    "--dstsrc-mailbox",
+                    "Folder to write to"),
                 new Option<string>(
                     "--dst-host",
                     "Address of host to write to"),
@@ -101,9 +169,14 @@ namespace EmailSync
                     "--dst-ssl",
                     () => SecureSocketOptions.SslOnConnect,
                     "SSL for destination server (None, SslOnConnect)"),
-                new Option<CONNECTION_OPTIONS>(
+                new Option<CONNECT_OPTS>(
                     "--dst",
-                    "Complete specification for mail server to write to")
+                    "Complete specification for mail server to write to"),
+
+                new Option<bool>(
+                    "--recursive",
+                    () => false,
+                    "")
             };
 
             rootCommand.Description = "EmailSync program";
@@ -112,7 +185,7 @@ namespace EmailSync
             rootCommand.Handler = CommandHandler.Create((OPTS opts) =>
             {
                 sync_mailbox(
-                    new CONNECTION_OPTIONS
+                    new CONNECT_OPTS
                     {
                         type = opts.srcType,
                         host = opts.srcHost,
@@ -121,7 +194,7 @@ namespace EmailSync
                         password = opts.srcPass,
                         ssl = opts.srcSsl
                     },
-                    new CONNECTION_OPTIONS
+                    new CONNECT_OPTS
                     {
                         type = opts.dstType,
                         host = opts.dstHost,
@@ -141,85 +214,65 @@ namespace EmailSync
             // test_pop3();
         }
 
-        private static IMailSpool connect(CONNECTION_OPTIONS srcOpts)
+        private static void sync_mailbox(CONNECT_OPTS srcOpts, CONNECT_OPTS dstOpts)
         {
-            var client = srcOpts.type == CONNECTION_OPTIONS.TYPE.POP3
-                ? new Pop3Client()
-                : (IMailSpool) new ImapClient();
-
-            client.Connect(srcOpts.host, srcOpts.port, srcOpts.ssl);
-            client.Authenticate(srcOpts.user, srcOpts.password);
-            return client;
-        }
-
-        private static void sync_mailbox(CONNECTION_OPTIONS srcOpts, CONNECTION_OPTIONS dstOpts)
-        {
-            Debug.Assert(dstOpts.type == CONNECTION_OPTIONS.TYPE.IMAP,
+            Debug.Assert(dstOpts.type == TYPE.IMAP,
                 "Only IMAP destinations are supported at the moment");
             using (var src_client = connect(srcOpts))
             {
-                var messages = new List<MimeMessage>();
-                for (var i = 0; i < src_client.Count; i++)
+                using (var dst_client = connect(dstOpts))
                 {
-                    var message = src_client.GetMessage(i);
-                    Console.WriteLine("Subject: {0}", message.Subject);
-                    messages.Add(message);
-                }
-
-                using (var dst_client = (IImapClient) connect(dstOpts))
-                {
-                    dst_client.Connect(dstOpts.host, dstOpts.port, dstOpts.ssl);
-                    dst_client.Authenticate(dstOpts.user, dstOpts.password);
-
-                    var folders = dst_client.GetFolders(new FolderNamespace('/', ""));
-                    var folder = folders.FirstOrDefault(folders => folders.FullName.Equals("INBOX"));
-                    if (folder == null)
+                    foreach (var ns in src_client.PersonalNamespaces)
+                    foreach (var src_folder in src_client.GetFolders(ns))
                     {
-                        Console.WriteLine("No INBOX aborting");
-                        return;
-                    }
-
-                    folder.Open(FolderAccess.ReadWrite);
-
-                    Console.WriteLine($"Mailbox: {folder.Name}");
-                    Console.WriteLine($" messages: {folder.Recent}/{folder.Count}");
-
-                    const MessageSummaryItems EVERYTHING = (MessageSummaryItems) (-1);
-                    var summaries = folder.Fetch(0, -1, EVERYTHING);
-                    var dst_message_ids = new List<string>();
-                    foreach (var summary in summaries)
-                    {
-                        var message = folder.GetMessage(summary.UniqueId);
-                        dst_message_ids.Add(message.MessageId);
-                    }
-                    // for (int i = 0; i < folder.Count; i++)
-                    // {
-                    //  dst_messages.Add(folder.GetMessage(i));
-                    // }
-                    // var dst_message_ids = (summaries.Select(summary => summary.Headers?.FirstOrDefault(h => h.Field.Equals("MessageID")))
-                    // 	.Where(message_id => message_id != null)
-                    // 	.Select(message_id => message_id.Value)).ToList();
-
-                    // var summaries = folder.Fetch(0, -1, MessageSummaryItems.Full);
-                    foreach (var message in messages)
-                        if (dst_message_ids.Contains(message.MessageId))
+                        var dst_folder = dst_client.GetFolder(src_folder.Name);
+                        var dst_message_ids = GetMessageIds(dst_folder);
+                        for (var i = 0; i < src_folder.Count; i++)
                         {
-                            Console.WriteLine($"Update(?) msg:{message.MessageId}");
+                            var message = src_folder.GetMessage(i);
+                            if (!dst_message_ids.Contains(message.MessageId))
+                            {
+                                dst_folder.Append(message);
+                            }
+                            else
+                            {
+                                //TODO Check if message has changed
+                            }
                         }
-                        else
-                        {
-                            Console.WriteLine($"Copy msg:{message.MessageId}");
-                            folder.Append(message);
-                        }
-
+                    }
                     dst_client.Disconnect(true);
                 }
-
                 src_client.Disconnect(true);
             }
         }
 
-        private static void test_imap(CONNECTION_OPTIONS opts)
+        private static List<string> GetMessageIds(IMailFolder dst_folder)
+        {
+            throw new NotImplementedException();
+        }
+
+        private static IImapClient connect(CONNECT_OPTS opts)
+        {
+            IImapClient dst_client;
+            switch (opts.type)
+            {
+                case TYPE.POP3:
+                    dst_client = new Pop3Imap();
+                    dst_client.Connect(opts.host, opts.port, opts.ssl);
+                    dst_client.Authenticate(opts.user, opts.password);
+                    return dst_client;
+                    break;
+                case TYPE.IMAP:
+                    dst_client = new ImapClient();
+                    dst_client.Connect(opts.host, opts.port, opts.ssl);
+                    dst_client.Authenticate(opts.user, opts.password);
+                    return dst_client;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        private static void test_imap(CONNECT_OPTS opts)
         {
             using (var dst_client = new ImapClient())
             {
@@ -255,20 +308,17 @@ namespace EmailSync
             }
         }
 
-        private static void test_pop3(CONNECTION_OPTIONS opts)
+        private static void test_pop3(CONNECT_OPTS opts)
         {
             using (var src_client = new Pop3Client())
             {
                 src_client.Connect(opts.host, opts.port, opts.ssl);
-
                 src_client.Authenticate(opts.user, opts.password);
-
                 for (var i = 0; i < src_client.Count; i++)
                 {
                     var message = src_client.GetMessage(i);
                     Console.WriteLine("Subject: {0}", message.Subject);
                 }
-
                 src_client.Disconnect(true);
             }
         }
