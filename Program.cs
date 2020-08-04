@@ -218,27 +218,37 @@ namespace EmailSync
                 using (var dst_client = connect(dstOpts))
                 {
                     foreach (var ns in src_client.PersonalNamespaces)
-                    foreach (var src_folder in src_client.GetFolders(ns))
                     {
-                        src_folder.Open(FolderAccess.ReadWrite);
-                        var dst_folder = dst_client.GetFolder(src_folder.Name);
-                        var dst_message_ids = GetMessageIds(dst_folder);
-                        for (var i = 0; i < src_folder.Count; i++)
+                        foreach (var src_folder in src_client.GetFolders(ns))
                         {
-                            var message = src_folder.GetMessage(i);
-                            if (!dst_message_ids.Contains(message.MessageId))
-                            {
-                                dst_folder.Append(message);
-                            }
-                            else
-                            {
-                                //TODO Check if message has changed
-                            }
+                            Console.WriteLine($"Syncing:{src_folder.FullName}");
+                            //sync_folder(dst_client, src_folder);
                         }
                     }
                     dst_client.Disconnect(true);
                 }
                 src_client.Disconnect(true);
+            }
+
+            static void sync_folder(IImapClient dst_client, IMailFolder src_folder)
+            {
+                src_folder.Open(FolderAccess.ReadWrite);
+                var dst_toplevel = dst_client.GetFolder(dst_client.PersonalNamespaces[0]);
+                dst_toplevel.Create(src_folder.FullName, true);
+                var dst_folder = dst_client.GetFolder(src_folder.Name);
+                var dst_message_ids = GetMessageIds(dst_folder);
+                for (var i = 0; i < src_folder.Count; i++)
+                {
+                    var message = src_folder.GetMessage(i);
+                    if (!dst_message_ids.Contains(message.MessageId))
+                    {
+                        dst_folder.Append(message);
+                    }
+                    else
+                    {
+                        //TODO Check if message has changed
+                    }
+                }
             }
         }
 
