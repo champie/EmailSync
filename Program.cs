@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Linq;
 using MailKit;
@@ -219,10 +220,12 @@ namespace EmailSync
                 {
                     foreach (var ns in src_client.PersonalNamespaces)
                     {
-                        foreach (var src_folder in src_client.GetFolders(ns))
+                        var src_folders = new List<IMailFolder> {src_client.GetFolder(ns)};
+                        src_folders.AddRange(src_client.GetFolders(ns));
+                        foreach (var src_folder in src_folders)
                         {
                             Console.WriteLine($"Syncing:{src_folder.FullName}");
-                            //sync_folder(dst_client, src_folder);
+                            sync_folder(dst_client, src_folder);
                         }
                     }
                     dst_client.Disconnect(true);
@@ -234,8 +237,16 @@ namespace EmailSync
             {
                 src_folder.Open(FolderAccess.ReadWrite);
                 var dst_toplevel = dst_client.GetFolder(dst_client.PersonalNamespaces[0]);
-                dst_toplevel.Create(src_folder.FullName, true);
-                var dst_folder = dst_client.GetFolder(src_folder.Name);
+                IMailFolder dst_folder;
+                try
+                {
+                    dst_folder = dst_client.GetFolder(src_folder.FullName);
+                }
+                catch (FolderNotFoundException)
+                {
+                    dst_toplevel.Create(src_folder.FullName, true);
+                    dst_folder = dst_client.GetFolder(src_folder.FullName);
+                }
                 var dst_message_ids = GetMessageIds(dst_folder);
                 for (var i = 0; i < src_folder.Count; i++)
                 {
